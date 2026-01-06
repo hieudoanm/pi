@@ -1,93 +1,221 @@
+import { PI } from '@pi/constants/app';
 import { NextPage } from 'next';
 import { useEffect, useMemo, useState } from 'react';
 
-const PI_314 =
-  '3.14159265358979323846264338327950288419716939937510' +
-  '58209749445923078164062862089986280348253421170679' +
-  '82148086513282306647093844609550582231725359408128' +
-  '48111745028410270193852110555964462294895493038196' +
-  '44288109756659334461284756482337867831652712019091' +
-  '45648566923460348610454326648213393607260249141273' +
-  '72458700660631558817488152092096282925409171536436' +
-  '78925903600113305305488204665213841469519415116094' +
-  '33057270365759591953092186117381932611793105118548' +
-  '07446237996274956735188575272489122793818301194912' +
-  '98336733624406566430860213949463952247371907021798' +
-  '60943702770539217176293176752384674818467669405132' +
-  '00056812714526356082778577134275778960917363717872' +
-  '14684409012249534301465495853710507922796892589235' +
-  '42019956112129021960864034418159813629774771309960' +
-  '51870721134999999837297804995105973173281609631859' +
-  '50244594553469083026425223082533446850352619311881' +
-  '71010003137838752886587533208381420617177669147303' +
-  '59825349042875546873115956286388235378759375195778' +
-  '18577805321712268066130019278766111959092164201989';
-
 const DIGIT_WIDTH = 24;
 const VIEWPORT_OFFSET = 4 * DIGIT_WIDTH;
+const HIGH_SCORE_KEY = 'pi-high-score';
+
+type Mode = 'practice' | 'game';
+
+const getHighScore = () => {
+  if (typeof window === 'undefined') return 0;
+  const saved = Number(localStorage.getItem(HIGH_SCORE_KEY));
+  return Number.isNaN(saved) ? 0 : saved;
+};
 
 const HomePage: NextPage = () => {
-  const digits = useMemo(() => PI_314.split(''), []);
-  const [index, setIndex] = useState(0);
+  const digits = useMemo(() => PI.split(''), []);
 
-  // ✅ Theme init WITHOUT useEffect
+  const [index, setIndex] = useState(0);
+  const [mode, setMode] = useState<Mode>('practice');
+
+  const [
+    { locked = false, lastResult = null, revealedIndex = null, highScore = 0 },
+    setGameState,
+  ] = useState<{
+    locked: boolean;
+    lastResult: 'correct' | 'wrong' | null;
+    revealedIndex: number | null;
+    highScore: number;
+  }>({
+    locked: false,
+    lastResult: null,
+    revealedIndex: null,
+    highScore: getHighScore(),
+  });
+
+  // Theme
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     if (typeof window === 'undefined') return 'dark';
     return (localStorage.getItem('theme') as 'dark' | 'light') ?? 'dark';
   });
 
-  // Apply theme + persist (this is fine)
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('theme', theme);
   }, [theme]);
 
-  // Keyboard navigation
+  // Keyboard handling
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowRight') {
-        setIndex((i) => Math.min(i + 1, digits.length - 1));
+      // PRACTICE MODE
+      if (mode === 'practice') {
+        if (e.key === 'ArrowRight') {
+          setIndex((i) => Math.min(i + 1, digits.length - 1));
+        }
+        if (e.key === 'ArrowLeft') {
+          setIndex((i) => Math.max(i - 1, 0));
+        }
+        return;
       }
-      if (e.key === 'ArrowLeft') {
-        setIndex((i) => Math.max(i - 1, 0));
+
+      // GAME MODE
+      if (mode === 'game' && !locked && /^[0-9.]$/.test(e.key)) {
+        const guess = e.key;
+        const correct = digits[index];
+
+        setGameState((p) => ({ ...p, revealedIndex: index }));
+
+        if (guess === correct) {
+          setGameState((p) => ({ ...p, lastResult: 'correct' }));
+          setTimeout(() => {
+            setIndex((i) => Math.min(i + 1, digits.length - 1));
+            setGameState((p) => ({
+              ...p,
+              lastResult: null,
+              revealedIndex: null,
+            }));
+          }, 200);
+        } else {
+          setGameState((previous) => {
+            const newHighScore = Math.max(previous.highScore, index);
+            localStorage.setItem(HIGH_SCORE_KEY, String(newHighScore));
+            return {
+              ...previous,
+              locked: true,
+              lastResult: 'wrong',
+              highScore: newHighScore,
+            };
+          });
+        }
       }
     };
 
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [digits.length]);
+  }, [mode, index, digits, locked]);
+
+  const retry = () => {
+    setIndex(0);
+    setGameState((previous) => ({
+      ...previous,
+      locked: false,
+      lastResult: null,
+      revealedIndex: null,
+    }));
+  };
 
   return (
-    <div className="bg-base-100 text-base-content relative flex h-screen items-center justify-center overflow-hidden">
+    <div className="bg-base-100 text-base-content flex h-screen items-center justify-center overflow-hidden">
       <div className="flex flex-col items-center gap-4">
+        {/* Theme */}
         <button
           className="btn btn-ghost btn-xs"
           onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}>
           {theme === 'dark' ? '🌙 Dark' : '☀️ Light'}
         </button>
+
+        {/* Mode Switch */}
+        <div className="flex gap-2">
+          <button
+            className={`btn btn-xs ${mode === 'practice' ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => setMode('practice')}>
+            Practice
+          </button>
+          <button
+            className={`btn btn-xs ${mode === 'game' ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => {
+              setMode('game');
+              retry();
+            }}>
+            Game
+          </button>
+        </div>
+
+        {/* Score */}
+        {mode === 'game' && (
+          <div className="text-xs opacity-70">
+            <span>Score: {index}</span>
+            <span className="mx-2">•</span>
+            <span className="font-semibold">Best: {highScore}</span>
+          </div>
+        )}
+
+        {/* Digits */}
         <div className="border-accent rounded-md border border-dashed px-4 py-2">
           <div className="relative h-12 w-54 overflow-hidden">
             <div
               className="absolute top-0 flex h-12 transition-[left] duration-300 ease-out"
               style={{ left: `${VIEWPORT_OFFSET - index * DIGIT_WIDTH}px` }}>
-              {digits.map((d, i) => (
-                <div
-                  key={i}
-                  className={[
-                    'flex h-12 w-6 items-center justify-center text-4xl select-none',
-                    i === index ? 'text-accent' : 'opacity-40',
-                  ].join(' ')}>
-                  {d}
-                </div>
-              ))}
+              {digits.map((d, i) => {
+                const isCurrent = i === index;
+                const isPast = i < index;
+                const isRevealed = revealedIndex === i;
+
+                const showDigit = mode === 'practice' || isPast || isRevealed;
+
+                return (
+                  <div
+                    key={i}
+                    className={[
+                      'flex h-12 w-6 items-center justify-center text-4xl transition-colors select-none',
+                      isCurrent ? 'text-accent' : 'opacity-40',
+                      lastResult === 'wrong' && isCurrent && 'text-error',
+                      lastResult === 'correct' && isCurrent && 'text-success',
+                    ].join(' ')}>
+                    {showDigit ? d : '•'}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
 
-        <div className="flex flex-col items-center gap-1 text-xs opacity-60">
-          <div>Use ← → arrow keys</div>
-          <div>Index: {index}</div>
+        {/* Instructions */}
+        <div className="text-center text-xs opacity-60">
+          {mode === 'practice' ? (
+            <>
+              <div>Use ← → arrow keys</div>
+              <div>Index: {index}</div>
+            </>
+          ) : locked ? (
+            <>
+              <div className="text-error font-semibold">Mistake!</div>
+              <div>You reached digit {index}</div>
+            </>
+          ) : (
+            <>
+              <div>Type the next digit of π</div>
+              <div>Index: {index}</div>
+            </>
+          )}
         </div>
+
+        {/* Retry */}
+        {mode === 'game' && locked && (
+          <button className="btn btn-error btn-sm" onClick={retry}>
+            Retry
+          </button>
+        )}
+
+        {/* Numpad */}
+        {mode === 'game' && !locked && (
+          <div className="mt-2 grid grid-cols-3 gap-2">
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9, '.', 0].map((n) => (
+              <button
+                key={n}
+                className="btn btn-secondary btn-sm"
+                onClick={() =>
+                  window.dispatchEvent(
+                    new KeyboardEvent('keydown', { key: String(n) }),
+                  )
+                }>
+                {n}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -18,7 +18,7 @@ const App: FC<AppProps> = ({ Component, pageProps }) => {
   return (
     <>
       <Head>
-        <title>pi</title>
+        <title>π · PI</title>
       </Head>
       <div
         className={`${geistSans.className} ${geistMono.className} bg-neutral-900 text-neutral-100`}>
